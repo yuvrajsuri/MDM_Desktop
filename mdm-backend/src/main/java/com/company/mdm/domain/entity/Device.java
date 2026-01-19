@@ -20,7 +20,7 @@ import java.time.LocalDateTime;
  * 4. ENROLLED means token issued, ACTIVE means first check-in received
  */
 @Entity
-@Table(name = "devices", indexes = {
+@Table(name = "desktop_devices", indexes = {
         @Index(name = "idx_devices_fulluuid", columnList = "fulluuid", unique = true),
         @Index(name = "idx_devices_uuid15", columnList = "uuid15"),
         @Index(name = "idx_devices_status", columnList = "status"),

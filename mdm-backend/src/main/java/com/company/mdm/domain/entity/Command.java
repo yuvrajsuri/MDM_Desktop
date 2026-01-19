@@ -19,7 +19,7 @@ import java.util.Map;
  * Commands are created by admins and delivered to devices via /status endpoint
  */
 @Entity
-@Table(name = "commands", indexes = {
+@Table(name = "desktop_commands", indexes = {
         @Index(name = "idx_commands_device_id", columnList = "device_id"),
         @Index(name = "idx_commands_status", columnList = "status"),
         @Index(name = "idx_commands_type", columnList = "command_type"),
