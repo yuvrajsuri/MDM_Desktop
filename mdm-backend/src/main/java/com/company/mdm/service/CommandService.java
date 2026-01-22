@@ -16,7 +16,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -110,33 +109,6 @@ public class CommandService {
         return commands.stream()
                 .map(this::toCommandDTO)
                 .collect(Collectors.toList());
-    }
-
-    /**
-     * Acknowledge command execution
-     */
-    @Transactional
-    public void acknowledgeCommand(Long commandId, String status, Map<String, Object> result, String errorMessage) {
-        Optional<Command> commandOpt = commandRepository.findById(commandId);
-
-        if (commandOpt.isEmpty()) {
-            throw new IllegalArgumentException("Command not found: " + commandId);
-        }
-
-        Command command = commandOpt.get();
-
-        if ("EXECUTED".equalsIgnoreCase(status)) {
-            command.markExecuted(result);
-            log.info("Command executed: id={}, type={}", commandId, command.getCommandType());
-        } else if ("FAILED".equalsIgnoreCase(status)) {
-            command.markFailed(errorMessage);
-            log.warn("Command failed: id={}, type={}, error={}",
-                    commandId, command.getCommandType(), errorMessage);
-        } else {
-            throw new IllegalArgumentException("Invalid status: " + status + ". Must be EXECUTED or FAILED");
-        }
-
-        commandRepository.save(command);
     }
 
     /**
