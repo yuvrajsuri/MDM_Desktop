@@ -21,7 +21,7 @@ public interface CommandRepository extends JpaRepository<Command, Long> {
          */
         @Query("SELECT c FROM Command c WHERE c.deviceId = :deviceId " +
                         "AND c.commandType = :commandType " +
-                        "ORDER BY c.createdAt DESC LIMIT 1")
+                        "ORDER BY c.createdAt ASC LIMIT 1")
         Optional<Command> findLatestByDeviceIdAndCommandType(
                         @Param("deviceId") Long deviceId,
                         @Param("commandType") String commandType);
