@@ -465,12 +465,9 @@ mvn spring-boot:run
 server.port=8081
 ```
 
----
-
-## 📞 Support
-
-For issues or questions, contact: support@company.com
-
----
-
-**Built with ❤️ following production-grade MDM architecture principles**
+<!-- pom.xml -->
+spring.datasource.hikari.maximum-pool-size=20                  //Max 20 concurrent DB connections        //Handles 20 simultaneous /status or /register requests
+spring.datasource.hikari.minimum-idle=5                        //Always keep 5 connections ready        //Fast response time (no connection creation delay)
+spring.datasource.hikari.connection-timeout=30000               //Wait 30s for available connection     //Request fails with timeout if all 20 connections busy
+spring.datasource.hikari.idle-timeout=600000                    //Close idle connections after 10min        //Reduces DB load during low traffic
+spring.datasource.hikari.max-lifetime=1800000                   //Refresh connections every 30min         //Prevents stale connections

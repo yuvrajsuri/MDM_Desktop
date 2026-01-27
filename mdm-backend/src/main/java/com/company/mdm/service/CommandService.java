@@ -1,11 +1,8 @@
 package com.company.mdm.service;
 
 import com.company.mdm.domain.entity.Command;
-import com.company.mdm.domain.entity.CommandStatus;
-import com.company.mdm.domain.entity.CommandType;
 import com.company.mdm.domain.entity.Device;
-import com.company.mdm.dto.CommandDTO;
-import com.company.mdm.dto.CreateCommandRequest;
+import com.company.mdm.dto.WhitelistRequest;
 import com.company.mdm.repository.CommandRepository;
 import com.company.mdm.repository.DeviceRepository;
 import lombok.RequiredArgsConstructor;
@@ -13,14 +10,15 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
 /**
- * Command Service - Business logic for command management
+ * Command Service - Simplified
+ * 
+ * Manages whitelist and other commands for devices
  */
 @Service
 @RequiredArgsConstructor
@@ -29,159 +27,102 @@ public class CommandService {
 
     private final CommandRepository commandRepository;
     private final DeviceRepository deviceRepository;
-
-    private static final DateTimeFormatter ISO_FORMATTER = DateTimeFormatter.ISO_DATE_TIME;
+    private final AuditService auditService;
 
     /**
-     * Create a new command for a device
+     * Create whitelist command for a device
+     * Replaces any existing whitelist for that device
      */
     @Transactional
-    public Command createCommand(CreateCommandRequest request, String createdBy) {
-        // Find device by fulluuid
-        Optional<Device> deviceOpt = deviceRepository.findByFulluuid(request.getDevice_fulluuid());
+    public Command createWhitelist(String fulluuid, WhitelistRequest request, String createdBy) {
+        // Find active device
+        Optional<Device> deviceOpt = deviceRepository.findByFulluuidAndStatusTrue(fulluuid);
 
         if (deviceOpt.isEmpty()) {
-            throw new IllegalArgumentException("Device not found: " + request.getDevice_fulluuid());
+            throw new IllegalArgumentException("Active device not found: " + fulluuid);
         }
 
         Device device = deviceOpt.get();
 
-        // Validate device is operational
-        if (!device.isOperational()) {
-            throw new IllegalStateException(
-                    "Cannot send command to device in status: " + device.getStatus());
-        }
-
-        // Parse command type
-        CommandType commandType;
-        try {
-            commandType = CommandType.valueOf(request.getCommand_type().toUpperCase());
-        } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("Invalid command_type: " + request.getCommand_type());
-        }
-
-        // Parse expiration if provided
-        LocalDateTime expiresAt = null;
-        if (request.getExpires_at() != null && !request.getExpires_at().isEmpty()) {
-            try {
-                expiresAt = LocalDateTime.parse(request.getExpires_at(), ISO_FORMATTER);
-            } catch (Exception e) {
-                throw new IllegalArgumentException("Invalid expires_at format. Use ISO 8601: " + e.getMessage());
-            }
-        }
-
         // Create command
         Command command = Command.builder()
                 .deviceId(device.getId())
-                .commandType(commandType)
-                .payload(request.getPayload())
-                .status(CommandStatus.PENDING)
-                .priority(request.getPriority() != null ? request.getPriority() : 0)
-                .expiresAt(expiresAt)
+                .commandType("GET_WHITELIST")
+                .payload(request.getCommands())
                 .createdBy(createdBy)
                 .build();
 
         command = commandRepository.save(command);
 
-        log.info("Command created: id={}, type={}, device={}",
-                command.getId(), command.getCommandType(), device.getFulluuid());
+        // Audit
+        auditService.logWhitelistCreated(device.getId(), fulluuid, createdBy);
+
+        log.info("Whitelist created for device: {}, command_id: {}", fulluuid, command.getId());
 
         return command;
     }
 
     /**
-     * Get pending commands for a device
-     * Called by /status endpoint
+     * Get latest whitelist for a device
+     * Returns device-specific whitelist or system default
      */
-    @Transactional
-    public List<CommandDTO> getPendingCommandsForDevice(Long deviceId) {
-        List<Command> commands = commandRepository.findPendingCommandsForDevice(
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> getWhitelist(Long deviceId) {
+        // Try to get device-specific whitelist
+        Optional<Command> commandOpt = commandRepository.findLatestByDeviceIdAndCommandType(
                 deviceId,
-                LocalDateTime.now());
+                "GET_WHITELIST");
 
-        // Mark commands as delivered
-        commands.forEach(Command::markDelivered);
-        commandRepository.saveAll(commands);
+        if (commandOpt.isPresent()) {
+            return commandOpt.get().getPayload();
+        }
 
-        log.debug("Delivered {} commands to device {}", commands.size(), deviceId);
+        // Return system default whitelist
+        Optional<Command> defaultCommandOpt = commandRepository.findLatestByDeviceIdAndCommandType(
+                0L, // System default device ID
+                "GET_WHITELIST");
 
-        // Convert to DTOs
-        return commands.stream()
-                .map(this::toCommandDTO)
-                .collect(Collectors.toList());
+        if (defaultCommandOpt.isPresent()) {
+            return defaultCommandOpt.get().getPayload();
+        }
+
+        // Fallback: hardcoded default
+        log.warn("No whitelist found, returning hardcoded default");
+        return getHardcodedDefault();
     }
 
     /**
      * Get all commands for a device
      */
     public List<Command> getCommandsForDevice(String fulluuid) {
-        Optional<Device> deviceOpt = deviceRepository.findByFulluuid(fulluuid);
+        Optional<Device> deviceOpt = deviceRepository.findByFulluuidAndStatusTrue(fulluuid);
 
         if (deviceOpt.isEmpty()) {
-            throw new IllegalArgumentException("Device not found: " + fulluuid);
+            throw new IllegalArgumentException("Active device not found: " + fulluuid);
         }
 
         return commandRepository.findByDeviceIdOrderByCreatedAtDesc(deviceOpt.get().getId());
     }
 
     /**
-     * Get command by ID
+     * Hardcoded default whitelist
      */
-    public Optional<Command> getCommandById(Long commandId) {
-        return commandRepository.findById(commandId);
-    }
-
-    /**
-     * Cancel a pending command
-     */
-    @Transactional
-    public void cancelCommand(Long commandId) {
-        Optional<Command> commandOpt = commandRepository.findById(commandId);
-
-        if (commandOpt.isEmpty()) {
-            throw new IllegalArgumentException("Command not found: " + commandId);
-        }
-
-        Command command = commandOpt.get();
-
-        if (command.getStatus() != CommandStatus.PENDING) {
-            throw new IllegalStateException(
-                    "Cannot cancel command in status: " + command.getStatus());
-        }
-
-        command.setStatus(CommandStatus.CANCELLED);
-        commandRepository.save(command);
-
-        log.info("Command cancelled: id={}", commandId);
-    }
-
-    /**
-     * Clean up expired commands (scheduled job)
-     */
-    @Transactional
-    public int cleanupExpiredCommands() {
-        List<Command> expiredCommands = commandRepository.findExpiredCommands(LocalDateTime.now());
-
-        expiredCommands.forEach(cmd -> {
-            cmd.setStatus(CommandStatus.EXPIRED);
-            log.debug("Command expired: id={}", cmd.getId());
-        });
-
-        commandRepository.saveAll(expiredCommands);
-
-        return expiredCommands.size();
-    }
-
-    /**
-     * Convert Command entity to CommandDTO
-     */
-    private CommandDTO toCommandDTO(Command command) {
-        return CommandDTO.builder()
-                .id(command.getId())
-                .type(command.getCommandType().name())
-                .payload(command.getPayload())
-                .priority(command.getPriority())
-                .expires_at(command.getExpiresAt() != null ? command.getExpiresAt().format(ISO_FORMATTER) : null)
-                .build();
+    private List<Map<String, Object>> getHardcodedDefault() {
+        List<Map<String, Object>> defaultList = new ArrayList<>();
+        defaultList.add(Map.of(
+                "user", "default",
+                "apps",
+                List.of("cmd.exe", "code.exe", "python.exe", "powershell.exe", "chrome.exe", "msedge.exe", "brave.exe",
+                        "dmwmdmapp.exe", "_unins.tmp"),
+                "urls",
+                List.of("docs.python.org", "cdnjs.cloudflare.com", "cdn.jsdelivr.net", "code.jquery.com",
+                        "ajax.googleapis.com", "cdn.tailwindcss.com", "bootstrapcdn.com", "fonts.googleapis.com",
+                        "fonts.gstatic.com", "gstatic.com", "googleusercontent.com", "githubassets.com",
+                        "githubusercontent.com", "gravatar.com", "twimg.com", "fbcdn.net", "googletagmanager.com",
+                        "google-analytics.com", "facebook.net", "hotjar.com", "mixpanel.com", "recaptcha.net",
+                        "hcaptcha.com", "octocaptcha.com", "api.github.com", "stripe.com", "example.com",
+                        "172.17.42.164",
+                        "localhost", "127.0.0.1", "devicemax.com", "microsoft.com")));
+        return defaultList;
     }
 }

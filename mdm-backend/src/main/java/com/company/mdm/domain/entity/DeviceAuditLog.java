@@ -6,17 +6,13 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
-import java.util.Map;
 
 /**
- * Device Audit Log Entity
+ * Device Audit Log Entity - Simplified version
  * 
- * Automatic audit trail for all device events.
- * Every state change, enrollment attempt, and check-in is logged.
+ * Tracks all device events for audit trail
  */
 @Entity
 @Table(name = "desktop_device_audit_log", indexes = {
@@ -35,18 +31,13 @@ public class DeviceAuditLog {
     private Long id;
 
     @Column(name = "device_id")
-    private Long deviceId; // Nullable for failed enrollment attempts
+    private Long deviceId;
 
     @Column(name = "fulluuid", length = 36)
-    private String fulluuid; // Always present (even for non-existent devices)
+    private String fulluuid;
 
-    @Enumerated(EnumType.STRING)
     @Column(name = "event_type", nullable = false, length = 50)
-    private AuditEventType eventType;
-
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "event_data", columnDefinition = "jsonb")
-    private Map<String, Object> eventData;
+    private String eventType;
 
     @Column(name = "ip_address", length = 45)
     private String ipAddress;
@@ -54,12 +45,8 @@ public class DeviceAuditLog {
     @Column(name = "user_agent", columnDefinition = "TEXT")
     private String userAgent;
 
-    @Enumerated(EnumType.STRING)
     @Column(name = "actor_type", length = 50)
-    private ActorType actorType;
-
-    @Column(name = "actor_id", length = 100)
-    private String actorId; // Device fulluuid or admin email
+    private String actorType;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
