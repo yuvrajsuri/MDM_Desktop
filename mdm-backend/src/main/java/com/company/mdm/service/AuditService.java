@@ -22,7 +22,7 @@ public class AuditService {
 
         private final DeviceAuditLogRepository auditLogRepository;
 
-        @Transactional(propagation = Propagation.REQUIRES_NEW)
+        @Transactional(propagation = Propagation.REQUIRED)
         public void logDeviceCreated(Device device, String adminEmail) {
                 DeviceAuditLog auditLog = DeviceAuditLog.builder()
                                 .deviceId(device.getId())

@@ -133,7 +133,7 @@ public class DeviceService {
                                 .build();
 
                 device = deviceRepository.save(device);
-
+                deviceRepository.flush();
                 auditService.logDeviceCreated(device, createdBy);
 
                 log.info("Device created with status=true: {}", fulluuid);
